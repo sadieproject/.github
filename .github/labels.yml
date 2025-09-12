@@ -1,0 +1,11 @@
+- { name: bug, color: "f04a00", description: "Something isn't working" }
+- { name: enhancement, color: "009800", description: "New feature or request" }
+- { name: documentation, color: "0075ca", description: "Improvements or additions to documentation" }
+- { name: "good first issue", color: "7057ff", description: "Suitable for newcomers" }
+- { name: "help wanted", color: "008672", description: "Extra attention is needed" }
+- { name: question, color: "d876e3", description: "Further information is requested" }
+- { name: wontfix, color: "ffffff", description: "This will not be worked on" }
+- { name: invalid, color: "e4e669", description: "This report contains invalid information" }
+- { name: pinned, color: "e99708", description: "This issue is pinned" }
+- { name: duplicate, color: "cfd3d7", description: "This issue or pull request already exists" }
+- { name: stale, color: "cccccc", description: "This issue or pull request is stale due to inactivity" }

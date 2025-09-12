@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support Question
+    url: https://github.com/sadieproject/.github-private/discussions
+    about: Please ask and answer questions here.
+  - name: Security Issue
+    url: https://github.com/sadieproject/.github-private/security/policy
+    about: Please report security issues privately.

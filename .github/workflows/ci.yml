@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        deno-version: ["1.40.x", "1.x"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno ${{ matrix.deno-version }}
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: ${{ matrix.deno-version }}
+
+      - name: Verify Deno installation
+        run: deno --version
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Run type check
+        run: deno check main.ts **/*.ts
+
+      - name: Run tests
+        run: deno test --allow-all --coverage
+
+      - name: Generate coverage report
+        run: deno coverage --lcov --output=coverage.lcov
+        if: matrix.deno-version == '1.x'
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: matrix.deno-version == '1.x'
+        with:
+          file: coverage.lcov
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Build executable
+        run: deno compile --allow-all --output=sadie main.ts
+        if: matrix.deno-version == '1.x'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: matrix.deno-version == '1.x'
+        with:
+          name: build-artifacts
+          path: |
+            sadie
+            sadie.exe
+          retention-days: 1
+
+  lint:
+    name: Lint and Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: 1.x
+
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Check Deno formatting
+        run: deno fmt --check
+
+      - name: Run Deno linting
+        run: deno lint
+
+      - name: Run Biome checks
+        run: biome check --apply=unsafe .
+
+      - name: Verify no changes after Biome
+        run: |
+          if ! git diff --quiet; then
+            echo "Biome made changes. Please run 'biome check --apply=unsafe .' locally and commit."
+            git diff
+            exit 1
+          fi

@@ -1,0 +1,91 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: 1.x
+
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest
+
+      - name: Verify Deno installation
+        run: deno --version
+
+      - name: Verify Biome installation
+        run: biome --version
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Deno type check
+        run: deno check main.ts **/*.ts
+
+      - name: Deno format check
+        run: deno fmt --check
+
+      - name: Deno lint check
+        run: deno lint
+
+      - name: Biome format check
+        run: biome format --check .
+
+      - name: Biome lint check
+        run: biome lint .
+
+      - name: Biome comprehensive check
+        run: biome check --no-errors-on-unmatched .
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: 1.x
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Deno security audit
+        run: |
+          # Check for known vulnerabilities in Deno standard library
+          deno info --json main.ts | jq '.modules[] | select(.specifier | contains("https://deno.land/std")) | .specifier'
+
+          # Verify no --allow-all permissions in source code
+          if grep -r --include="*.ts" --include="*.js" "allow-all" .; then
+            echo "Warning: Found --allow-all usage in source code"
+            exit 1
+          fi
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

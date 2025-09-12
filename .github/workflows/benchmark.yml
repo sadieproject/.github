@@ -1,0 +1,92 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: 1.x
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Run benchmarks
+        run: |
+          # Run Deno's built-in benchmarks if they exist
+          if [ -d "benchmarks" ]; then
+            deno bench --allow-all
+          else
+            echo "No benchmark directory found. Creating sample benchmark..."
+            echo 'Deno.bench("sample benchmark", () => {
+              const arr = new Array(1000).fill(0).map((_, i) => i);
+              arr.sort((a, b) => b - a);
+            });' > sample_bench.ts
+            deno bench --allow-all sample_bench.ts
+          fi
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        if: github.event_name == 'push'
+        with:
+          tool: "benchmarkjs"
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          alert-threshold: "200%"
+          fail-on-alert: true
+
+  startup-time:
+    name: Startup Performance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: 1.x
+
+      - name: Cache Deno dependencies
+        run: deno cache --reload main.ts
+
+      - name: Measure startup time
+        run: |
+          echo "Measuring Deno startup time..."
+
+          # Measure cold start
+          time deno run --allow-all main.ts --help 2>&1 | head -1
+
+          # Measure warm start (cached)
+          time deno run --allow-all main.ts --help 2>&1 | head -1
+
+          # Compile and measure compiled startup
+          deno compile --allow-all --output=sadie-bench main.ts
+          time ./sadie-bench --help 2>&1 | head -1
+
+      - name: Bundle size analysis
+        run: |
+          echo "Analyzing bundle size..."
+
+          # Create bundle and analyze size
+          deno bundle main.ts bundle.js
+          ls -lh bundle.js
+
+          # Show dependency tree
+          deno info main.ts

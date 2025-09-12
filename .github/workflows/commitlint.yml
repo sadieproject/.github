@@ -1,0 +1,200 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  commitlint:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Validate current commit (push)
+        if: github.event_name == 'push'
+        run: echo "${{ github.event.head_commit.message }}" | npx tsx commitlint.config.ts
+
+      - name: Validate PR commits
+        if: github.event_name == 'pull_request'
+        run: |
+          # Get all commit messages in the PR
+          git log --format="%s" ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} > commit_messages.txt
+
+          # Validate each commit message
+          while IFS= read -r commit_message; do
+            if [ -n "$commit_message" ]; then
+              echo "Validating: $commit_message"
+              echo "$commit_message" | npx commitlint --config commitlint.config.ts
+              if [ $? -ne 0 ]; then
+                echo "❌ Commit message validation failed: $commit_message"
+                exit 1
+              else
+                echo "✅ Commit message is valid: $commit_message"
+              fi
+            fi
+          done < commit_messages.txt
+
+      - name: Comment PR on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.issue.number;
+            const body = `## ❌ Commit Message Validation Failed
+
+            Your commit messages don't follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+
+            ### Expected Format:
+            \`\`\`
+            <type>[optional scope]: <description>
+
+            [optional body]
+
+            [optional footer(s)]
+            \`\`\`
+
+            ### Valid Types:
+            - \`feat\`: A new feature
+            - \`fix\`: A bug fix
+            - \`docs\`: Documentation only changes
+            - \`style\`: Changes that do not affect the meaning of the code
+            - \`refactor\`: A code change that neither fixes a bug nor adds a feature
+            - \`perf\`: A code change that improves performance
+            - \`test\`: Adding missing tests or correcting existing tests
+            - \`chore\`: Changes to the build process or auxiliary tools
+
+            ### Examples:
+            - \`feat(auth): add login functionality\`
+            - \`fix(parser): handle empty input gracefully\`
+            - \`docs(readme): update installation instructions\`
+            - \`chore: update dependencies\`
+
+            Please update your commit messages and force push to fix this issue.`;
+
+            github.rest.issues.createComment({
+              issue_number: issue_number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  commit-message-check:
+    name: Check Commit Message Format
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Verify commitlint config exists
+        run: |
+          ls -la commitlint.config.ts
+          echo "Using TypeScript commitlint configuration"
+
+      - name: Validate latest commit
+        run: |
+          # Get the latest commit message
+          COMMIT_MESSAGE=$(git log -1 --pretty=format:'%s')
+          echo "Validating commit message: $COMMIT_MESSAGE"
+
+          # Validate the commit message
+          echo "$COMMIT_MESSAGE" | npx commitlint --config commitlint.config.ts
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Commit message follows conventional format"
+          else
+            echo "❌ Commit message validation failed"
+            echo ""
+            echo "Your commit message: '$COMMIT_MESSAGE'"
+            echo ""
+            echo "Expected format: <type>[optional scope]: <description>"
+            echo ""
+            echo "Valid types: feat, fix, docs, style, refactor, perf, test, chore, revert, ci, build"
+            echo ""
+            echo "Examples:"
+            echo "  feat(auth): add user authentication"
+            echo "  fix(parser): handle edge case in data parsing"
+            echo "  docs(readme): update installation instructions"
+            exit 1
+          fi
+
+  release-notes:
+    name: Generate Release Notes Preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')
+    needs: commitlint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install conventional-changelog
+        run: npm install -g conventional-changelog-cli
+
+      - name: Generate release notes preview
+        run: |
+          echo "## 📋 Release Notes Preview" > release_notes_preview.md
+          echo "" >> release_notes_preview.md
+          conventional-changelog -p angular -i release_notes_preview.md -s -r 0
+
+          # Display the preview
+          cat release_notes_preview.md
+
+      - name: Comment PR with release notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issue_number = context.issue.number;
+
+            let body = "## 📋 Release Notes Preview\n\n";
+
+            try {
+              const releaseNotes = fs.readFileSync('release_notes_preview.md', 'utf8');
+              body += releaseNotes;
+            } catch (error) {
+              body += "Could not generate release notes preview.";
+            }
+
+            body += "\n\n---\n*This preview is automatically generated based on conventional commit messages.*";
+
+            github.rest.issues.createComment({
+              issue_number: issue_number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
